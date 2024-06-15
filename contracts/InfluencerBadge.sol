@@ -261,6 +261,7 @@ contract InfluencerBadge is
                 Address.sendValue(payable(msg.sender), refundAmount);
             }
         } else {
+            require(msg.value == 0, "NO_NATIVE");
             // msg.sender->this
             SafeERC20.safeTransferFrom(
                 IERC20(payToken),
@@ -586,6 +587,7 @@ contract InfluencerBadge is
         uint256 newProtocolPercent,
         uint256 newKolFeePercent
     ) external onlyOwner {
+        require(newKolFeePercent + newProtocolPercent <= 20, "EX_LIM");
         protocolFeePercent = newProtocolPercent;
         kolFeePercent = newKolFeePercent;
     }
