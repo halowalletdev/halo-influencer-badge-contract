@@ -27,19 +27,18 @@ contract InfluencerBadge is
         address kol; // creator of this badge pool
         address payToken; // payment currency of this badge pool
         uint256 amountPerPayToken; // 10^token's decimal  e.g. for eth: 10^18=1000000000000000000
-        uint256 tokenBalance; // updated when buying、 selling、 adding bonus
+        uint256 tokenBalance; // updated when buying, selling, adding bonus
         // parameters of price curve:
-        // price formula: y=(x^2+A)/B *varCoef1/varCoef2
+        // price formula: y=(x^2+A)/B *varCoef1/VAR_COEF_DECIMAL
         uint256 constA;
         uint256 constB;
-        // initial value are all 1, and updated when bonus are added
-        uint256 varCoef1; // update to: tokenBalance of the pool "after" adding bonus
-        uint256 varCoef2; // update to: tokenBalance of the pool "before" adding bonus
+        // initial value: 10^18, and updated when bonus are added
+        uint256 varCoef1; // updated when adding bonus
         uint256 revenueSharingPercent; // [0,100] the proportion of the income earned by kol in the later period is distributed to badge holders
         bool hasFinishPremint; // if kol is in whitelist, then halo official will firstly mint before users; if kol is not in whitelist, then do not need premint
     }
     uint256 private constant SCALE_DECIMAL = 100;
-
+    uint256 private constant VAR_COEF_DECIMAL = 10 ** 18; // poolConfig's varCoef1 is expanded 10**18 times
     // erc1155
     string public name;
     string public symbol;
@@ -187,8 +186,7 @@ contract InfluencerBadge is
         poolConfig.tokenBalance = 0;
         poolConfig.constA = constA;
         poolConfig.constB = constB;
-        poolConfig.varCoef1 = 10 ** 18;
-        poolConfig.varCoef2 = 10 ** 18;
+        poolConfig.varCoef1 = VAR_COEF_DECIMAL;
         poolConfig.revenueSharingPercent = revenueSharingPercent;
         if (isWhitelistKOL[msg.sender]) {
             poolConfig.hasFinishPremint = false; // false: need premint
@@ -392,7 +390,7 @@ contract InfluencerBadge is
 
         BadgePoolConfig storage poolConfig = badgePoolConfigs[poolId];
         require(poolConfig.kol != address(0), "INV_ID");
-        require(poolConfig.tokenBalance > 0, "CANNOT_ADD"); // because after adding bonus, varCoef2=tokenBalance, so can't be zero
+        require(poolConfig.tokenBalance > 0, "CANNOT_ADD"); // used as denominator below
 
         address payToken = poolConfig.payToken;
         uint256 actualBonusAmount;
@@ -413,19 +411,14 @@ contract InfluencerBadge is
         }
 
         // update parameters
-        poolConfig.varCoef1 = Math.mulDiv(
-            poolConfig.varCoef1,
+        uint256 newCoef = Math.mulDiv(
             poolConfig.tokenBalance + actualBonusAmount,
             10 ** 18,
+            poolConfig.tokenBalance, // can not be zero
             Math.Rounding.Floor
-        ); // numerator
+        );
+        poolConfig.varCoef1 = (poolConfig.varCoef1 * newCoef) / (10 ** 18);
 
-        poolConfig.varCoef2 = Math.mulDiv(
-            poolConfig.varCoef2,
-            poolConfig.tokenBalance,
-            10 ** 18,
-            Math.Rounding.Ceil
-        ); // denominator, can not be 0
         poolConfig.tokenBalance += actualBonusAmount;
 
         emit AddBonus(
@@ -460,9 +453,9 @@ contract InfluencerBadge is
 
         uint256 supply = totalSupply(poolId);
 
-        // the price of the i-th badge is  (i^2+A)/B*varCoef1/varCoef2 --->  (i^2+A) * (varCoef1) / ( B*varCoef2)
+        // the price of the i-th badge is  (i^2+A)/B*varCoef1/VAR_COEF_DECIMAL --->  (i^2+A) * (varCoef1) / ( B*VAR_COEF_DECIMAL)
         // so the all price of [supply+1, supply+2,...... supply+amount] equal:
-        //      (  (supply+1)^2+.... (supply+amount)^2 + amount*A ) * (varCoef1) / ( B*varCoef2)
+        //      (  (supply+1)^2+.... (supply+amount)^2 + amount*A ) * (varCoef1) / ( B*VAR_COEF_DECIMAL)
         // in addition: 1^2+2^2+......n^2=n(n+1)(2n+1)/6   ---> Divisible, no decimals will appear
 
         uint256 sum1 = ((supply + amount) *
@@ -473,7 +466,7 @@ contract InfluencerBadge is
         uint256 numerator = ((sum1 - sum2) + amount * (poolConfig.constA)) *
             poolConfig.varCoef1;
 
-        uint256 denominator = poolConfig.constB * poolConfig.varCoef2;
+        uint256 denominator = poolConfig.constB * VAR_COEF_DECIMAL;
         // when dividing, decimals may occur (rounding up, benefiting the pool, users paying more)）
         buyPrice = Math.mulDiv(
             numerator,
@@ -515,9 +508,9 @@ contract InfluencerBadge is
 
         uint256 supply = totalSupply(poolId);
         require(amount > 0 && supply >= amount, "INV_AMT");
-        // the price of the i-th badge is  (i^2+A)/B*varCoef1/varCoef2 --->  (i^2+A) * (varCoef1) / ( B*varCoef2)
+        // the price of the i-th badge is  (i^2+A)/B*varCoef1/VAR_COEF_DECIMAL --->  (i^2+A) * (varCoef1) / ( B*VAR_COEF_DECIMAL)
         // so the all sell price of [supply-(m-1),supply-(m-2) ...... ,supply-0 ] equal:
-        //      (  (supply-m+1)^2+.... (supply)^2    + m*A ) * (varCoef1) / ( B*varCoef2)
+        //      (  (supply-m+1)^2+.... (supply)^2    + m*A ) * (varCoef1) / ( B*VAR_COEF_DECIMAL)
         // in addition: 1^2+2^2+......n^2=n(n+1)(2n+1)/6   ---> Divisible, no decimals will appear
 
         uint256 sum1 = (supply * (supply + 1) * (2 * supply + 1)) / 6;
@@ -528,7 +521,7 @@ contract InfluencerBadge is
         uint256 numerator = ((sum1 - sum2) + amount * (poolConfig.constA)) *
             poolConfig.varCoef1;
 
-        uint256 denominator = poolConfig.constB * poolConfig.varCoef2;
+        uint256 denominator = poolConfig.constB * VAR_COEF_DECIMAL;
         // when dividing, decimals may occur (rounding down, benefiting the pool, users receive less)）
         sellPrice = Math.mulDiv(
             numerator,
