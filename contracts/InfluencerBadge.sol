@@ -187,8 +187,8 @@ contract InfluencerBadge is
         poolConfig.tokenBalance = 0;
         poolConfig.constA = constA;
         poolConfig.constB = constB;
-        poolConfig.varCoef1 = 1;
-        poolConfig.varCoef2 = 1;
+        poolConfig.varCoef1 = 10 ** 18;
+        poolConfig.varCoef2 = 10 ** 18;
         poolConfig.revenueSharingPercent = revenueSharingPercent;
         if (isWhitelistKOL[msg.sender]) {
             poolConfig.hasFinishPremint = false; // false: need premint
@@ -413,8 +413,19 @@ contract InfluencerBadge is
         }
 
         // update parameters
-        poolConfig.varCoef2 *= poolConfig.tokenBalance; // denominator, can not be 0
-        poolConfig.varCoef1 *= (poolConfig.tokenBalance + actualBonusAmount); // numerator
+        poolConfig.varCoef1 = Math.mulDiv(
+            poolConfig.varCoef1,
+            poolConfig.tokenBalance + actualBonusAmount,
+            10 ** 18,
+            Math.Rounding.Floor
+        ); // numerator
+
+        poolConfig.varCoef2 = Math.mulDiv(
+            poolConfig.varCoef2,
+            poolConfig.tokenBalance,
+            10 ** 18,
+            Math.Rounding.Ceil
+        ); // denominator, can not be 0
         poolConfig.tokenBalance += actualBonusAmount;
 
         emit AddBonus(
