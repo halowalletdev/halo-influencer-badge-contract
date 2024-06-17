@@ -413,8 +413,8 @@ contract InfluencerBadge is
         }
 
         // update parameters
-        poolConfig.varCoef2 = poolConfig.tokenBalance; // denominator, can not be 0
-        poolConfig.varCoef1 = poolConfig.tokenBalance + actualBonusAmount; // numerator
+        poolConfig.varCoef2 *= poolConfig.tokenBalance; // denominator, can not be 0
+        poolConfig.varCoef1 *= (poolConfig.tokenBalance + actualBonusAmount); // numerator
         poolConfig.tokenBalance += actualBonusAmount;
 
         emit AddBonus(
